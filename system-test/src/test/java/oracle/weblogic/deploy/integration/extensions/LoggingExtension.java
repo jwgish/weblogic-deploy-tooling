@@ -10,7 +10,7 @@ import org.junit.jupiter.api.extension.BeforeTestExecutionCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.platform.commons.support.AnnotationSupport;
 
-public class LoggingExtension implements BeforeTestExecutionCallback, AfterTestExecutionCallback {
+public class LoggingExtension implements BeforeTestExecutionCallback {
 
   @Override
   public void beforeTestExecution(ExtensionContext context) {
@@ -18,21 +18,6 @@ public class LoggingExtension implements BeforeTestExecutionCallback, AfterTestE
         .log(Level.INFO, () -> String.format("========== Starting test [%s] method=%s ==========",
             context.getDisplayName(),
             context.getRequiredTestMethod().getName()));
-  }
-
-
-  @Override
-  public void afterTestExecution(ExtensionContext context) {
-    boolean testFailed = context.getExecutionException().isPresent();
-    Logger logger = getLogger((context.getRequiredTestClass()));
-    if (testFailed) {
-      logger.log(Level.SEVERE, () -> String.format("========== FAILED test [%s] method=%s ==========",
-          context.getDisplayName(), context.getRequiredTestMethod().getName()));
-      logger.severe(context.getExecutionException().get().getMessage());
-    } else {
-      logger.log(Level.INFO, () -> String.format("========== Finished test [%s] method=%s ==========",
-          context.getDisplayName(), context.getRequiredTestMethod().getName()));
-    }
   }
 
 

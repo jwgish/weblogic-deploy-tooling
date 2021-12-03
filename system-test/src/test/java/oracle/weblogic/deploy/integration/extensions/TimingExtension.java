@@ -2,6 +2,7 @@ package oracle.weblogic.deploy.integration.extensions;
 
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.junit.jupiter.api.extension.AfterTestExecutionCallback;
 import org.junit.jupiter.api.extension.BeforeTestExecutionCallback;
@@ -22,11 +23,16 @@ public class TimingExtension implements BeforeTestExecutionCallback, AfterTestEx
     long minutes = TimeUnit.MILLISECONDS.toMinutes(duration);
     long seconds = TimeUnit.MILLISECONDS.toSeconds(duration) - TimeUnit.MINUTES.toSeconds(minutes);
 
-    LoggingExtension.getLogger((context.getRequiredTestClass()))
-        .log(Level.INFO, () -> String.format("========== Test duration [%s] method=%s: %s min, %s sec ==========",
-            context.getDisplayName(),
-            context.getRequiredTestMethod().getName(),
-            minutes, seconds));
+    boolean testFailed = context.getExecutionException().isPresent();
+    Logger logger = LoggingExtension.getLogger((context.getRequiredTestClass()));
+    if (testFailed) {
+      logger.log(Level.SEVERE, () -> String.format("========== FAILED test [%s] method=%s: %s min, %s sec  ==========",
+          context.getDisplayName(), context.getRequiredTestMethod().getName(), minutes, seconds));
+      logger.severe(context.getExecutionException().get().getMessage());
+    } else {
+      logger.log(Level.INFO, () -> String.format("========== Finished test [%s] method=%s: %s min, %s sec  ==========",
+          context.getDisplayName(), context.getRequiredTestMethod().getName(), minutes, seconds));
+    }
   }
 
   private ExtensionContext.Store getStore(ExtensionContext context) {
