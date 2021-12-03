@@ -38,7 +38,7 @@ public class BaseTest {
     protected static String deployAppScript = "";
     protected static String encryptModelScript = "";
     protected static String validateModelScript = "";
-    protected static String domainParent12213 = "";
+    protected static String domainParentDir = "";
     protected static final String ORACLE_DB_IMG = "phx.ocir.io/weblogick8s/database/enterprise";
     protected static final String ORACLE_DB_IMG_TAG = "12.2.0.1-slim";
     private static final String DB_CONTAINER_NAME = "InfraDB";
@@ -56,7 +56,7 @@ public class BaseTest {
         validateModelScript = getWDTScriptsHome() + FS + "validateModel.sh";
         compareModelScript = getWDTScriptsHome() + FS + "compareModel.sh";
 
-        domainParent12213 = "." + FS + "domains";
+        domainParentDir = "." + FS + "target" + FS + "domains";
     }
 
     protected static void setup() throws Exception {
@@ -70,7 +70,7 @@ public class BaseTest {
         executeAndVerify(cmd);
 
         // create domain_parent directory if not existing
-        File domainParentDir = new File(domainParent12213);
+        File domainParentDir = new File(BaseTest.domainParentDir);
         if(!domainParentDir.exists()) {
             domainParentDir.mkdir();
         }
