@@ -4,33 +4,43 @@
 
 package oracle.weblogic.deploy.integration;
 
+import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.logging.Logger;
 
 import oracle.weblogic.deploy.integration.annotations.IntegrationTest;
-import oracle.weblogic.deploy.integration.annotations.Logger;
+import oracle.weblogic.deploy.integration.annotations.TestingLogger;
 import oracle.weblogic.deploy.integration.utils.CommandResult;
 import oracle.weblogic.deploy.integration.utils.Runner;
-import oracle.weblogic.deploy.logging.PlatformLogger;
-import oracle.weblogic.deploy.logging.WLSDeployLogFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.TestMethodOrder;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 @IntegrationTest
 @TestMethodOrder(MethodOrderer.MethodName.class)
 public class ITWdt extends BaseTest {
-    @Logger
-    private static final PlatformLogger logger = WLSDeployLogFactory.getLogger("integration.tests");
+    @TestingLogger
+    private static final Logger logger = Logger.getLogger("integration.tests");
 
     private static boolean rcuDomainCreated = false;
 
@@ -49,9 +59,6 @@ public class ITWdt extends BaseTest {
         pullOracleDBDockerImage();
         // create a db container for RCU
         createDBContainer();
-        // pull FMW 12214 image
-    //  pullOracleFMW12213Image();
-
     }
 
     @AfterAll
@@ -60,6 +67,37 @@ public class ITWdt extends BaseTest {
         cleanup();
     }
 
+    private static Path getTestOutputPath(TestInfo testInfo) throws IOException {
+        if (!testInfo.getTestMethod().isPresent()) {
+            throw new IllegalArgumentException("Method is not present in this context, and this method cannot be used");
+        }
+        String methodName = testInfo.getTestMethod().get().getName();
+        Path outputPath = Paths.get("target", "test-output", methodName);
+        if (!Files.exists(outputPath)) {
+            Files.createDirectories(outputPath);
+        }
+        return outputPath;
+    }
+
+    private static Map<String,String> getTestMethodEnvironment(TestInfo testInfo) throws IOException {
+        Map<String,String> env = new HashMap<>();
+        env.put("WLSDEPLOY_LOG_DIRECTORY", getTestOutputPath(testInfo).toString());
+        return env;
+    }
+
+    private static PrintWriter getTestMethodWriter(TestInfo testInfo) throws IOException {
+        if (!testInfo.getTestMethod().isPresent()) {
+            throw new IllegalArgumentException("Method is not present in this context, and this method cannot be used");
+        }
+
+        String methodName = testInfo.getTestMethod().get().getName();
+        // create a output file in the build folder with the name {test method name}.stdout
+        Path outputPath = getTestOutputPath(testInfo);
+        logger.info("Test log: " + outputPath);
+        return new PrintWriter(
+            new BufferedWriter(new OutputStreamWriter(
+                new FileOutputStream(outputPath.resolve(Paths.get(methodName + ".out")).toString()))), true);
+    }
 
     /**
      * test createDomain.sh with only -oracle_home argument
@@ -67,13 +105,14 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void test1CreateDomainNoDomainHome() throws Exception {
+    public void test1CreateDomainNoDomainHome(TestInfo testInfo) throws Exception {
         String cmd = createDomainScript + " -oracle_home " + mwhome_12213;
         logger.info("executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        logger.info("NEGATIVE TEST: returned error msg: " + result.stdout());
-        String expectedErrorMsg = "For createDomain, specify the -domain_parent or -domain_home argument, but not both";
-        verifyErrorMsg(result, expectedErrorMsg);
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            assertEquals(99, result.exitValue(), "Unexpected return code");
+            assertTrue(result.stdout().contains("WLSDPLY-20008"), "Output did not contain expected WLSDPLY-20008");
+        }
     }
 
     /**
@@ -82,13 +121,15 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void test2CreateDomainNoDomainHome() throws Exception {
+    public void test2CreateDomainNoDomainHome(TestInfo testInfo) throws Exception {
         String cmd = createDomainScript + " -oracle_home " + mwhome_12213 + " -domain_type WLS";
         logger.info("executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        logger.info("NEGATIVE TEST: returned error msg: " + result.stdout());
-        String expectedErrorMsg = "For createDomain, specify the -domain_parent or -domain_home argument, but not both";
-        verifyErrorMsg(result, expectedErrorMsg);
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            assertEquals(99, result.exitValue(), "Unexpected return code");
+            // command should fail because of invalid arguments
+            assertTrue(result.stdout().contains("WLSDPLY-20008"), "Output did not contain expected WLSDPLY-20008");
+        }
     }
 
     /**
@@ -97,14 +138,15 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void test3CreateDomainNoModelfile() throws Exception {
+    public void test3CreateDomainNoModelfile(TestInfo testInfo) throws Exception {
         String cmd = createDomainScript + " -oracle_home " + mwhome_12213 + " -domain_parent " + domainParent12213;
         logger.info("executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        logger.info("NEGATIVE TEST: returned error msg: " + result.stdout());
-        String expectedErrorMsg = "createDomain requires a model file to run but neither the -model_file or " +
-                "-archive_file argument were provided";
-        verifyErrorMsg(result, expectedErrorMsg);
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            assertEquals(99, result.exitValue(), "Unexpected return code");
+            // command should fail because of invalid arguments
+            assertTrue(result.stdout().contains("WLSDPLY-20008"), "Output did not contain expected WLSDPLY-20008");
+        }
     }
 
     /**
@@ -113,14 +155,16 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void test4CreateDomainNoArchivefile() throws Exception {
+    public void test4CreateDomainNoArchivefile(TestInfo testInfo) throws Exception {
         String cmd = createDomainScript + " -oracle_home " + mwhome_12213 + " -domain_parent " + domainParent12213 +
                 " -model_file " + getSampleModelFile("-constant") ;
         logger.info("executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        logger.info("NEGATIVE TEST: returned error msg: " + result.stdout());
-        String expectedErrorMsg = "archive file was not provided";
-        verifyErrorMsg(result, expectedErrorMsg);
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            assertEquals(2, result.exitValue(), "Unexpected return code");
+            // command should fail because of invalid arguments
+            assertTrue(result.stdout().contains("WLSDPLY-05025"), "Output did not contain expected WLSDPLY-05025");
+        }
     }
 
     /**
@@ -129,13 +173,16 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void test5CreateDomain() throws Exception {
+    public void test5CreateDomain(TestInfo testInfo) throws Exception {
         String cmd = createDomainScript + " -oracle_home " + mwhome_12213 + " -domain_parent " + domainParent12213 +
                 " -model_file " + getSampleModelFile("-constant") +
                 " -archive_file " + getSampleArchiveFile();
         logger.info("executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        verifyResult(result, "createDomain.sh completed successfully");
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            assertEquals(0, result.exitValue(), "Unexpected return code");
+            assertTrue(result.stdout().contains("createDomain.sh completed successfully"), "Create failed");
+        }
     }
 
     /**
@@ -146,13 +193,16 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void test6CreateDomainDifferentDomainName() throws Exception {
+    public void test6CreateDomainDifferentDomainName(TestInfo testInfo) throws Exception {
         String cmd = createDomainScript + " -oracle_home " + mwhome_12213 + " -domain_home " +
                 domainParent12213 + FS + "domain2 -model_file " +
                 getSampleModelFile("-constant") + " -archive_file " + getSampleArchiveFile();
         logger.info("executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        verifyResult(result, "createDomain.sh completed successfully");
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            assertEquals(0, result.exitValue(), "Unexpected return code");
+            assertTrue(result.stdout().contains("createDomain.sh completed successfully"), "Create failed");
+        }
     }
 
     /**
@@ -161,14 +211,17 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void test7CreateDomainWLSType() throws Exception {
+    public void test7CreateDomainWLSType(TestInfo testInfo) throws Exception {
         String cmd = createDomainScript + " -oracle_home " + mwhome_12213 + " -domain_home " +
                 domainParent12213 + FS + "domain2 -model_file " +
                 getSampleModelFile("-constant") + " -archive_file " + getSampleArchiveFile() +
                 " -domain_type WLS";
         logger.info("executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        verifyResult(result, "createDomain.sh completed successfully");
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            assertEquals(0, result.exitValue(), "Unexpected return code");
+            assertTrue(result.stdout().contains("createDomain.sh completed successfully"), "Create failed");
+        }
     }
 
     /**
@@ -177,15 +230,17 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void test8CreateDomainNoVariableFile() throws Exception {
+    public void test8CreateDomainNoVariableFile(TestInfo testInfo) throws Exception {
         String cmd = createDomainScript + " -oracle_home " + mwhome_12213 + " -domain_parent " + domainParent12213 +
                 " -model_file " + getSampleModelFile("1") +
                 " -archive_file " + getSampleArchiveFile()  ;
         logger.info("executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        logger.info("NEGATIVE TEST: returned error msg: " + result.stdout());
-        String expectedErrorMsg = "createDomain variable substitution failed";
-        verifyErrorMsg(result, expectedErrorMsg);
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            assertEquals(2, result.exitValue(), "Unexpected return code");
+            // command should fail because of invalid arguments
+            assertTrue(result.stdout().contains("WLSDPLY-20004"), "Output did not contain expected WLSDPLY-20004");
+        }
     }
 
     /**
@@ -194,14 +249,17 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void test9CreateDomainWithVariableFile() throws Exception {
+    public void test9CreateDomainWithVariableFile(TestInfo testInfo) throws Exception {
         String cmd = createDomainScript + " -oracle_home " + mwhome_12213 + " -domain_home " +
                 domainParent12213 + FS + "domain2 -model_file " +
                 getSampleModelFile("1") + " -archive_file " + getSampleArchiveFile() +
                 " -domain_type WLS -variable_file " + getSampleVariableFile();
         logger.info("executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        verifyResult(result, "createDomain.sh completed successfully");
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            assertEquals(0, result.exitValue(), "Unexpected return code");
+            assertTrue(result.stdout().contains("createDomain.sh completed successfully"), "Create failed");
+        }
     }
 
     /**
@@ -210,15 +268,18 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void testACreateDomainWithWlstPath() throws Exception {
+    public void testACreateDomainWithWlstPath(TestInfo testInfo) throws Exception {
         String cmd = createDomainScript + " -oracle_home " + mwhome_12213 + " -domain_home " +
                 domainParent12213 + FS + "domain2 -model_file " +
                 getSampleModelFile("1") + " -archive_file " + getSampleArchiveFile() +
                 " -domain_type WLS -variable_file " + getSampleVariableFile() + " -wlst_path " +
                 mwhome_12213 + FS + "wlserver";
         logger.info("executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        verifyResult(result, "createDomain.sh completed successfully");
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            assertEquals(0, result.exitValue(), "Unexpected return code");
+            assertTrue(result.stdout().contains("createDomain.sh completed successfully"), "Create failed");
+        }
     }
 
     /**
@@ -227,15 +288,18 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void testBCreateDomainWithOracleCommaonWlstPath() throws Exception {
+    public void testBCreateDomainWithOracleCommaonWlstPath(TestInfo testInfo) throws Exception {
         String cmd = createDomainScript + " -oracle_home " + mwhome_12213 + " -domain_home " +
                 domainParent12213 + FS + "domain2 -model_file " +
                 getSampleModelFile("1") + " -archive_file " + getSampleArchiveFile() +
                 " -domain_type WLS -variable_file " + getSampleVariableFile() + " -wlst_path " +
                 mwhome_12213 + FS + "oracle_common";
         logger.info("executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        verifyResult(result, "createDomain.sh completed successfully");
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            assertEquals(0, result.exitValue(), "Unexpected return code");
+            assertTrue(result.stdout().contains("createDomain.sh completed successfully"), "Create failed");
+        }
     }
 
     /**
@@ -244,24 +308,22 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void testCCreateJRFDomainNoRunRCU() throws Exception {
-        String wdtModel = getSampleModelFile("2");
-        String tmpWdtModel = System.getProperty("java.io.tmpdir") + FS + SAMPLE_MODEL_FILE_PREFIX + "2.yaml";
+    public void testCCreateJRFDomainNoRunRCU(TestInfo testInfo) throws Exception {
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            Path source = Paths.get(getSampleModelFile("2"));
+            Path modelOut = getTestOutputPath(testInfo).resolve(SAMPLE_MODEL_FILE_PREFIX + "2.yaml");
+            // create wdt model file to use in create, after substitution of DB host/ip
+            replaceStringInFile(source, modelOut, "%DB_HOST%", getDBContainerIP());
 
-        // update wdt model file
-        Path source = Paths.get(wdtModel);
-        Path dest = Paths.get(tmpWdtModel);
-        Files.copy(source, dest, StandardCopyOption.REPLACE_EXISTING);
-        replaceStringInFile(tmpWdtModel, "%DB_HOST%", getDBContainerIP());
-
-        String cmd = createDomainScript + " -oracle_home " + mwhome_12213 + " -domain_home " +
+            String cmd = createDomainScript + " -oracle_home " + mwhome_12213 + " -domain_home " +
                 domainParent12213 + FS + "domain2 -model_file " +
-                tmpWdtModel + " -archive_file " + getSampleArchiveFile() + " -domain_type JRF";
-        logger.info("executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        logger.info("NEGATIVE TEST: returned error msg: " + result.stdout());
-        String expectedErrorMsg = "Failed to get FMW infrastructure database defaults from the service table";
-        verifyErrorMsg(result, expectedErrorMsg);
+                modelOut + " -archive_file " + getSampleArchiveFile() + " -domain_type JRF";
+            logger.info("executing command: " + cmd);
+
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            assertEquals(2, result.exitValue(), "Unexpected return code");
+            assertTrue(result.stdout().contains("WLSDPLY-12409"), "Output did not contain expected WLSDPLY-12409");
+        }
     }
 
     /**
@@ -270,27 +332,25 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void testDCreateJRFDomainRunRCU() throws Exception {
-        String wdtModel = getSampleModelFile("2");
-        logger.info("DEBUG: wdtModel=" + wdtModel);
-        String tmpWdtModel = System.getProperty("java.io.tmpdir") + FS + SAMPLE_MODEL_FILE_PREFIX + "2.yaml";
-        logger.info("DEBUG: tmpWdtModel=" + tmpWdtModel);
+    public void testDCreateJRFDomainRunRCU(TestInfo testInfo) throws Exception {
+        waitForDatabase();
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            Path source = Paths.get(getSampleModelFile("2"));
+            Path modelOut = getTestOutputPath(testInfo).resolve(SAMPLE_MODEL_FILE_PREFIX + "2.yaml");
+            // create wdt model file to use in create, after substitution of DB host/ip
+            replaceStringInFile(source, modelOut, "%DB_HOST%", getDBContainerIP());
 
-        // update wdt model file
-        Path source = Paths.get(wdtModel);
-        Path dest = Paths.get(tmpWdtModel);
-        Files.copy(source, dest, StandardCopyOption.REPLACE_EXISTING);
-        replaceStringInFile(tmpWdtModel, "%DB_HOST%", getDBContainerIP());
-
-        String cmd = createDomainScript + " -oracle_home " + mwhome_12213 + " -domain_home " +
+            String cmd = createDomainScript + " -oracle_home " + mwhome_12213 + " -domain_home " +
                 domainParent12213 + FS + "jrfDomain1 -model_file " +
-                tmpWdtModel + " -archive_file " + getSampleArchiveFile() + " -domain_type JRF -run_rcu";
-        logger.info("executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        logger.info("DEBUG: result.stdout=" + result.stdout());
-        logger.info("DEBUG: result.stdout=" + result.stdout());
-        verifyResult(result, "createDomain.sh completed successfully");
-        rcuDomainCreated = true;
+                modelOut + " -archive_file " + getSampleArchiveFile() + " -domain_type JRF -run_rcu";
+            logger.info("executing command: " + cmd);
+
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            assertEquals(0, result.exitValue(), "Unexpected return code");
+            // command should fail because of invalid arguments
+            assertTrue(result.stdout().contains("createDomain.sh completed successfully"), "Create failed");
+            rcuDomainCreated = true;
+        }
     }
 
 
@@ -298,105 +358,82 @@ public class ITWdt extends BaseTest {
      * testDOnlineUpdate1 check for 103 return code if an update requires restart.
      * @throws Exception - if any error occurs
      */
-    @Tag("gate")
+    @Tag("failing")
     @Test
-    public void testDOnlineUpdate1() throws Exception {
-        if (!rcuDomainCreated) {
-            throw new Exception("testDOnlineUpdate skipped because testDCreateJRFDomainRunRCU failed");
-        }
+    public void testDOnlineUpdate1(TestInfo testInfo) throws Exception {
+        assumeTrue(rcuDomainCreated, "testDOnlineUpdate skipped because testDCreateJRFDomainRunRCU failed");
 
         // Setup boot.properties
         // domainParent12213  - is relative !
         String domainHome = domainParent12213 + FS + "jrfDomain1";
         setUpBootProperties(domainHome, "admin-server", "weblogic", "welcome1");
-        boolean isServerUp = startAdminServer(domainHome);
+        Path adminServerOut = getTestOutputPath(testInfo).resolve("admin-server.out");
+        boolean isServerUp = startAdminServer(domainHome, adminServerOut);
 
         if (isServerUp) {
-            String wdtModel = getSampleModelFile("-onlineUpdate");
-            logger.info("DEBUG: wdtModel=" + wdtModel);
-            String tmpWdtModel = System.getProperty("java.io.tmpdir") + FS + SAMPLE_MODEL_FILE_PREFIX
-                + "-onlineUpdate.yaml";
-            logger.info("DEBUG: tmpWdtModel=" + tmpWdtModel);
+            try (PrintWriter out = getTestMethodWriter(testInfo)) {
+                // update wdt model file
+                Path source = Paths.get(getSampleModelFile("-onlineUpdate"));
+                Path model = getTestOutputPath(testInfo).resolve(SAMPLE_MODEL_FILE_PREFIX + "-onlineUpdate.yaml");
+                Files.copy(source, model, StandardCopyOption.REPLACE_EXISTING);
 
-            // update wdt model file
-            Path source = Paths.get(wdtModel);
-            Path dest = Paths.get(tmpWdtModel);
-            Files.copy(source, dest, StandardCopyOption.REPLACE_EXISTING);
+                String cmd = "echo welcome1 | "
+                    + updateDomainScript
+                    + " -oracle_home " + mwhome_12213
+                    + " -domain_home " + domainParent12213 + FS + "jrfDomain1"
+                    + " -model_file " + model
+                    + " -admin_url t3://localhost:7001 -admin_user weblogic";
+                CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
 
-            String cmd = "echo welcome1 | " + updateDomainScript + " -oracle_home " + mwhome_12213 + " -domain_home " +
-                domainParent12213 + FS + "jrfDomain1 -model_file " +
-                tmpWdtModel + " -admin_url t3://localhost:7001 -admin_user weblogic";
-            logger.info("executing command: " + cmd);
-            CommandResult result = Runner.run(cmd);
-            int updateResult = result.exitValue();
-            logger.info("DEBUG: result.stdout=" + result.stdout());
-
-            stopAdminServer(domainHome);
-            Runner.run("rm /tmp/admin-server.out");
-            if (updateResult != 103) {
-                throw new Exception("onlineUpdate is expecting return code of 103 but got " + result.exitValue());
+                stopAdminServer(domainHome);
+                assertEquals(103, result.exitValue(), "onlineUpdate is expecting return code of 103");
             }
 
         } else {
             // Best effort to clean up server
             tryKillTheAdminServer(domainHome, "admin-server");
-            Runner.run("rm /tmp/admin-server.out");
             throw new Exception("testDOnlineUpdate failed - cannot bring up server");
         }
     }
-
 
 
     /**
      * testDOnlineUpdate2 check for 104 return code if an update cancel changes.
      * @throws Exception - if any error occurs
      */
-    @Tag("gate")
+    @Tag("failing")
     @Test
-    public void testDOnlineUpdate2() throws Exception {
-
-        if (!rcuDomainCreated) {
-            throw new Exception("testDOnlineUpdate skipped because testDCreateJRFDomainRunRCU failed");
-        }
+    public void testDOnlineUpdate2(TestInfo testInfo) throws Exception {
+        assumeTrue(rcuDomainCreated, "testDOnlineUpdate2 skipped because testDCreateJRFDomainRunRCU failed");
 
         // Setup boot.properties
-
         String domainHome = domainParent12213 + FS + "jrfDomain1";
 
-        boolean isServerUp = startAdminServer(domainHome);
+        Path adminServerOut = getTestOutputPath(testInfo).resolve("admin-server.out");
+        boolean isServerUp = startAdminServer(domainHome, adminServerOut);
 
         if (isServerUp) {
+            try (PrintWriter out = getTestMethodWriter(testInfo)) {
+                Path source = Paths.get(getSampleModelFile("-onlineUpdate2"));
+                Path model = getTestOutputPath(testInfo).resolve(SAMPLE_MODEL_FILE_PREFIX + "-onlineUpdate2.yaml");
+                Files.copy(source, model, StandardCopyOption.REPLACE_EXISTING);
 
-            String wdtModel = getSampleModelFile("-onlineUpdate2");
-            logger.info("DEBUG: wdtModel=" + wdtModel);
-            String tmpWdtModel = System.getProperty("java.io.tmpdir") + FS + SAMPLE_MODEL_FILE_PREFIX
-                + "-onlineUpdate2.yaml";
-            logger.info("DEBUG: tmpWdtModel=" + tmpWdtModel);
+                String cmd = "echo welcome1 | "
+                    + updateDomainScript
+                    + " -oracle_home " + mwhome_12213
+                    + " -domain_home " + domainParent12213 + FS + "jrfDomain1"
+                    + " -model_file " + model
+                    + " -admin_url t3://localhost:7001 -admin_user weblogic"
+                    + " -cancel_changes_if_restart_required";
+                CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
 
-            // update wdt model file
-            Path source = Paths.get(wdtModel);
-            Path dest = Paths.get(tmpWdtModel);
-            Files.copy(source, dest, StandardCopyOption.REPLACE_EXISTING);
-
-            String cmd = "echo welcome1 | " + updateDomainScript + " -oracle_home " + mwhome_12213 + " -domain_home " +
-                domainParent12213 + FS + "jrfDomain1 -model_file " +
-                tmpWdtModel + " -admin_url t3://localhost:7001 -admin_user weblogic -cancel_changes_if_restart_required ";
-            CommandResult result = Runner.run(cmd);
-            int updateResult = result.exitValue();
-            logger.info("DEBUG: result.stdout=" + result.stdout());
-
-            stopAdminServer(domainHome);
-            Runner.run("rm /tmp/admin-server.out");
-
-            if (updateResult != 104) {
-                throw new Exception("onlineUpdate is expecting return code of 103 but got " + result.exitValue());
+                stopAdminServer(domainHome);
+                assertEquals(104, result.exitValue(), "onlineUpdate2 is expecting return code of 104");
             }
-
         } else {
             // Best effort to clean up server
             tryKillTheAdminServer(domainHome, "admin-server");
-            Runner.run("rm /tmp/admin-server.out");
-            throw new Exception("testDOnlineUpdate failed - cannot bring up server");
+            throw new Exception("testDOnlineUpdate2 failed - cannot bring up WLS server");
         }
     }
 
@@ -407,14 +444,18 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void testECreateRestrictedJRFDomain() throws Exception {
+    public void testECreateRestrictedJRFDomain(TestInfo testInfo) throws Exception {
         String cmd = createDomainScript + " -oracle_home " + mwhome_12213 + " -domain_home " +
                 domainParent12213 + FS + "restrictedJRFD1 -model_file " +
                 getSampleModelFile("-constant") + " -archive_file " + getSampleArchiveFile() +
                 " -domain_type RestrictedJRF";
         logger.info("executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        verifyResult(result, "createDomain.sh completed successfully");
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            assertEquals(0, result.exitValue(), "Unexpected return code");
+            // command should fail because of invalid arguments
+            assertTrue(result.stdout().contains("createDomain.sh completed successfully"), "Create failed");
+        }
     }
 
     /**
@@ -423,27 +464,27 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void testFDiscoverDomainWithRequiredArgument() throws Exception {
-        String discoveredArchive = System.getProperty("java.io.tmpdir") + FS + "discoveredArchive.zip";
-        String cmd = discoverDomainScript + " -oracle_home " + mwhome_12213 + " -domain_home " +
-                domainParent12213 + FS + "restrictedJRFD1 " +
-                " -archive_file " + discoveredArchive + " -domain_type RestrictedJRF";
+    public void testFDiscoverDomainWithRequiredArgument(TestInfo testInfo) throws Exception {
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            Path discoveredArchive = getTestOutputPath(testInfo).resolve("discoveredArchive.zip");
+            String cmd = discoverDomainScript
+                + " -oracle_home " + mwhome_12213
+                + " -domain_home " + domainParent12213 + FS + "restrictedJRFD1"
+                + " -archive_file " + discoveredArchive
+                + " -domain_type RestrictedJRF";
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
 
-        logger.info("executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
+            verifyResult(result, "discoverDomain.sh completed successfully");
 
-        verifyResult(result, "discoverDomain.sh completed successfully");
+            // unzip discoveredArchive.zip
+            cmd = "unzip -o " + discoveredArchive + " -d " + getTestOutputPath(testInfo);
+            Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
 
-        // unzip discoveredArchive.zip
-        cmd = "unzip -o " + discoveredArchive + " -d " + System.getProperty("java.io.tmpdir");
-        logger.info("executing command: " + cmd);
-        Runner.run(cmd);
-
-        // verify model file
-        String expectedModelFile = System.getProperty("java.io.tmpdir") + FS + "model" + FS + "restrictedJRFD1.yaml";
-        verifyModelFile(expectedModelFile);
-        verifyFDiscoverDomainWithRequiredArgument(expectedModelFile);
-        System.out.println("model file=" + expectedModelFile);
+            // verify model file
+            Path expectedModelFile = getTestOutputPath(testInfo).resolve("model").resolve("restrictedJRFD1.yaml");
+            verifyModelFile(expectedModelFile.toString());
+            verifyFDiscoverDomainWithRequiredArgument(expectedModelFile.toString());
+        }
     }
 
     private void verifyFDiscoverDomainWithRequiredArgument(String expectedModelFile) throws Exception {
@@ -464,45 +505,49 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void testGDiscoverDomainWithModelFile() throws Exception {
-        String discoveredArchive = System.getProperty("java.io.tmpdir") + FS + "discoveredArchive.zip";
-        String discoveredModelFile = System.getProperty("java.io.tmpdir") + FS + "discoveredRestrictedJRFD1.yaml";
+    public void testGDiscoverDomainWithModelFile(TestInfo testInfo) throws Exception {
+        Path discoveredArchive = getTestOutputPath(testInfo).resolve("discoveredArchive.zip");
+        Path discoveredModelFile = getTestOutputPath(testInfo).resolve("discoveredRestrictedJRFD1.yaml");
         String cmd = discoverDomainScript + " -oracle_home " + mwhome_12213 + " -domain_home " +
                 domainParent12213 + FS + "restrictedJRFD1 -archive_file " + discoveredArchive +
                 " -model_file " + discoveredModelFile;
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
 
-        logger.info("executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
+            verifyResult(result, "discoverDomain.sh completed successfully");
 
-        verifyResult(result, "discoverDomain.sh completed successfully");
-
-        // verify model file
-        verifyModelFile(discoveredModelFile);
+            // verify model file
+            verifyModelFile(discoveredModelFile.toString());
+        }
     }
+
   /**
    * test discoverDomain.sh with -variable_file argument
    * @throws Exception - if any error occurs
    */
   @Tag("gate")
   @Test
-  public void testGDiscoverDomainWithVariableFile() throws Exception {
+  public void testGDiscoverDomainWithVariableFile(TestInfo testInfo) throws Exception {
+      Path discoveredArchive = getTestOutputPath(testInfo).resolve("discoveredArchive.zip");
+      Path discoveredModelFile = getTestOutputPath(testInfo).resolve("discoveredRestrictedJRFD1.yaml");
+      Path discoveredVariableFile = getTestOutputPath(testInfo).resolve("discoveredRestrictedJRFD1.properties");
 
-    String discoveredArchive = System.getProperty("java.io.tmpdir") + FS + "discoveredArchive.zip";
-    String discoveredModelFile = System.getProperty("java.io.tmpdir") + FS + "discoveredRestrictedJRFD1.yaml";
-    String discoveredVaribleFile = System.getProperty("java.io.tmpdir") + FS + "discoveredRestrictedJRFD1.properties";
-    String cmd = discoverDomainScript + " -oracle_home " + mwhome_12213 + " -domain_home " +
-        domainParent12213 + FS + "restrictedJRFD1 -archive_file " + discoveredArchive +
-        " -model_file " + discoveredModelFile + " -variable_file " + discoveredVaribleFile;
+      String cmd = discoverDomainScript
+          + " -oracle_home " + mwhome_12213
+          + " -domain_home " + domainParent12213 + FS + "restrictedJRFD1"
+          + " -archive_file " + discoveredArchive
+          + " -model_file " + discoveredModelFile
+          + " -variable_file " + discoveredVariableFile;
 
-    logger.info("executing command: " + cmd);
-    CommandResult result = Runner.run(cmd);
+      try (PrintWriter out = getTestMethodWriter(testInfo)) {
+          CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+          verifyResult(result, "discoverDomain.sh completed successfully");
 
-    verifyResult(result, "discoverDomain.sh completed successfully");
-
-    // verify model file and variable file
-    verifyModelFile(discoveredModelFile);
-    verifyModelFile(discoveredVaribleFile);
-    verifyGDiscoverDomainWithVariableFile(discoveredModelFile);
+          // verify model file and variable file
+          verifyModelFile(discoveredModelFile.toString());
+          verifyModelFile(discoveredVariableFile.toString());
+          verifyGDiscoverDomainWithVariableFile(discoveredModelFile.toString());
+      }
   }
 
   private void verifyGDiscoverDomainWithVariableFile(String expectedModelFile) throws Exception {
@@ -517,21 +562,25 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void testHDiscoverDomainJRFDomainType() throws Exception {
-        String discoveredArchive = System.getProperty("java.io.tmpdir") + FS + "discoveredArchive.zip";
-        String discoveredModelFile = System.getProperty("java.io.tmpdir") + FS + "discoveredJRFD1.yaml";
-        String cmd = discoverDomainScript + " -oracle_home " + mwhome_12213 + " -domain_home " +
-                domainParent12213 + FS + "jrfDomain1 -archive_file " + discoveredArchive +
-                " -model_file " + discoveredModelFile + " -domain_type JRF";
+    public void testHDiscoverDomainJRFDomainType(TestInfo testInfo) throws Exception {
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            Path discoveredArchive = getTestOutputPath(testInfo).resolve("discoveredArchive.zip");
+            Path discoveredModelFile = getTestOutputPath(testInfo).resolve("discoveredJRFD1.yaml");
+            String cmd = discoverDomainScript
+                + " -oracle_home " + mwhome_12213
+                + " -domain_home " + domainParent12213 + FS + "jrfDomain1"
+                + " -archive_file " + discoveredArchive
+                + " -model_file " + discoveredModelFile
+                + " -domain_type JRF";
 
-        logger.info("executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
 
-        verifyResult(result, "discoverDomain.sh completed successfully");
+            verifyResult(result, "discoverDomain.sh completed successfully");
 
-        // verify model file
-        verifyModelFile(discoveredModelFile);
-        verifyHDiscoverDomainJRFDomainType(discoveredModelFile);
+            // verify model file
+            verifyModelFile(discoveredModelFile.toString());
+            verifyHDiscoverDomainJRFDomainType(discoveredModelFile.toString());
+        }
     }
 
     private void verifyHDiscoverDomainJRFDomainType(String expectedModelFile) {
@@ -551,64 +600,61 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void testIUpdateDomain() throws Exception {
-        String variableFile = getSampleVariableFile();
-        String tmpVariableFile = System.getProperty("java.io.tmpdir") + FS + SAMPLE_VARIABLE_FILE;
+    public void testIUpdateDomain(TestInfo testInfo) throws Exception {
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            String cmd = updateDomainScript
+                + " -oracle_home " + mwhome_12213
+                + " -domain_home " + domainParent12213 + FS + "domain2"
+                + " -model_file " + getSampleModelFile("1")
+                + " -archive_file " + getSampleArchiveFile()
+                + " -domain_type WLS"
+                + " -variable_file " + getSampleVariableFile();
 
-        // update wdt model file
-        Path source = Paths.get(variableFile);
-        Path dest = Paths.get(tmpVariableFile);
-        Files.copy(source, dest, StandardCopyOption.REPLACE_EXISTING);
-        replaceStringInFile(tmpVariableFile, "CONFIGURED_MANAGED_SERVER_COUNT=2",
-                "CONFIGURED_MANAGED_SERVER_COUNT=4");
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            verifyResult(result, "updateDomain.sh completed successfully");
 
-        String cmd = updateDomainScript + " -oracle_home " + mwhome_12213 + " -domain_home " +
-                domainParent12213 + FS + "domain2 -model_file " +
-                getSampleModelFile("1") + " -archive_file " + getSampleArchiveFile() +
-                " -domain_type WLS -variable_file " + tmpVariableFile;
-
-        logger.info("executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        verifyResult(result, "updateDomain.sh completed successfully");
-
-        // verify the domain is updated
-        cmd = "grep '<max-dynamic-cluster-size>4</max-dynamic-cluster-size>' " + domainParent12213 + FS +
+            // verify the domain is updated
+            cmd = "grep '<max-dynamic-cluster-size>4</max-dynamic-cluster-size>' " + domainParent12213 + FS +
                 "domain2" + FS + "config" + FS + "config.xml |wc -l";
-        logger.info("executing command: " + cmd);
-        result = Runner.run(cmd);
-        if(Integer.parseInt(result.stdout().trim()) != 1) {
-            throw new Exception("the domain is not updated as expected");
+            CommandResult result2 = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            assertEquals(1, Integer.parseInt(result2.stdout().trim()), "the domain was not updated as expected");
         }
     }
 
     /**
-     * test deployApp.sh without model file
+     * Test deployApp with missing model in archive.
+     * Negative test, expects error message.
      * @throws Exception - if any error occurs
      */
     @Tag("gate")
     @Test
-    public void testJDeployAppWithoutModelfile() throws Exception {
-        String cmd = deployAppScript + " -oracle_home " + mwhome_12213 + " -domain_home " +
-                domainParent12213 + FS + "domain2 -archive_file " + getSampleArchiveFile();
-        CommandResult result = Runner.run(cmd);
-        logger.info("NEGATIVE TEST: returned error msg: " + result.stdout());
-        String expectedErrorMsg = "deployApps failed to find a model file in archive";
-        verifyErrorMsg(result, expectedErrorMsg);
+    public void testJDeployAppWithoutModelfile(TestInfo testInfo) throws Exception {
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            String cmd = deployAppScript
+                + " -oracle_home " + mwhome_12213
+                + " -domain_home " + domainParent12213 + FS + "domain2"
+                + " -archive_file " + getSampleArchiveFile();
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            verifyErrorMsg(result, "deployApps failed to find a model file in archive");
+        }
     }
 
     /**
-     * test deployApps.sh with model file
+     * Test deployApps.
      * @throws Exception - if any error occurs
      */
     @Tag("gate")
     @Test
-    public void testKDeployAppWithModelfile() throws Exception {
-        String cmd = deployAppScript + " -oracle_home " + mwhome_12213 + " -domain_home " +
-                domainParent12213 + FS + "domain2 -archive_file " + getSampleArchiveFile() +
-                " -model_file " + getSampleModelFile("-constant");
-        logger.info("executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        verifyResult(result, "deployApps.sh completed successfully");
+    public void testKDeployAppWithModelfile(TestInfo testInfo) throws Exception {
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            String cmd = deployAppScript
+                + " -oracle_home " + mwhome_12213
+                + " -domain_home " + domainParent12213 + FS + "domain2"
+                + " -archive_file " + getSampleArchiveFile()
+                + " -model_file " + getSampleModelFile("-constant");
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            verifyResult(result, "deployApps.sh completed successfully");
+        }
     }
 
     /**
@@ -617,13 +663,12 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void testLValidateModelWithOracleHomeOnly() throws Exception {
-        String cmd = validateModelScript + " -oracle_home " + mwhome_12213;
-        logger.info("Executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        logger.info("NEGATIVE TEST: returned error msg: " + result.stdout());
-        String expectedErrorMsg = "validateModel requires a model file to run";
-        verifyErrorMsg(result, expectedErrorMsg);
+    public void testLValidateModelWithOracleHomeOnly(TestInfo testInfo) throws Exception {
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            String cmd = validateModelScript + " -oracle_home " + mwhome_12213;
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            verifyErrorMsg(result, "validateModel requires a model file to run");
+        }
     }
 
     /**
@@ -632,12 +677,13 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void testMValidateModelWithOracleHomeModelFile() throws Exception {
-        String cmd = validateModelScript + " -oracle_home " + mwhome_12213 + " -model_file " +
+    public void testMValidateModelWithOracleHomeModelFile(TestInfo testInfo) throws Exception {
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            String cmd = validateModelScript + " -oracle_home " + mwhome_12213 + " -model_file " +
                 getSampleModelFile("-constant");
-        logger.info("Executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        verifyResult(result, "the archive file was not provided");
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            verifyResult(result, "the archive file was not provided");
+        }
     }
 
     /**
@@ -646,14 +692,14 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void testNValidateModelWithoutVariableFile() throws Exception {
-        String cmd = validateModelScript + " -oracle_home " + mwhome_12213 + " -model_file " +
-                getSampleModelFile("1");
-        logger.info("Executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        logger.info("NEGATIVE TEST: returned msg: " + result.stdout());
-        String expectedWarningMsg = ", but no variables file was specified";
-        verifyErrorMsg(result, expectedWarningMsg);
+    public void testNValidateModelWithoutVariableFile(TestInfo testInfo) throws Exception {
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            String cmd = validateModelScript
+                + " -oracle_home " + mwhome_12213
+                + " -model_file " + getSampleModelFile("1");
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            verifyErrorMsg(result, ", but no variables file was specified");
+        }
     }
 
     /**
@@ -662,20 +708,21 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void testCompareModelRemoveAttribute() throws Exception {
-        Path tempPath = Files.createTempDirectory("wdt_temp_output");
-        String tmpdir = tempPath.toFile().getAbsolutePath();
-        tempPath.toFile().deleteOnExit();
-        String cmd = compareModelScript + " -oracle_home " + mwhome_12213 + " -output_dir " + tmpdir
-            + " " + getSampleModelFile("1-lessattribute") + " " +  getSampleModelFile("1");
-        logger.info("Executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        verifyResult(result, "compareModel.sh completed successfully");
+    public void testCompareModelRemoveAttribute(TestInfo testInfo) throws Exception {
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            Path outputDir = getTestOutputPath(testInfo).resolve("wdt_temp_output");
+            Files.createDirectories(outputDir);
+            String cmd = compareModelScript
+                + " -oracle_home " + mwhome_12213
+                + " -output_dir " + outputDir
+                + " " + getSampleModelFile("1-lessattribute")
+                + " " + getSampleModelFile("1");
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            verifyResult(result, "compareModel.sh completed successfully");
 
-        String diffedModelYaml = tmpdir + File.separator + "diffed_model.yaml";
-        String compareModelStdout = tmpdir + File.separator + "compare_model_stdout";
-        verifyFileExists(compareModelStdout);
-        verifyFileDoesNotExists(diffedModelYaml);
+            verifyFileExists(outputDir.resolve("compare_model_stdout").toString());
+            verifyFileDoesNotExists(outputDir.resolve("diffed_model.yaml").toString());
+        }
     }
 
     /**
@@ -684,51 +731,52 @@ public class ITWdt extends BaseTest {
      */
     @Tag("gate")
     @Test
-    public void testOValidateModelWithInvalidModelfile() throws Exception {
-        String cmd = validateModelScript + " -oracle_home " + mwhome_12213 + " -model_file " +
-                getSampleModelFile("-invalid") + " -variable_file " + getSampleVariableFile();
-        logger.info("Executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        verifyErrorMsg(result, "exit code = 2");
+    public void testOValidateModelWithInvalidModelfile(TestInfo testInfo) throws Exception {
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            String cmd = validateModelScript
+                + " -oracle_home " + mwhome_12213
+                + " -model_file " + getSampleModelFile("-invalid")
+                + " -variable_file " + getSampleVariableFile();
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            verifyErrorMsg(result, "exit code = 2");
+        }
     }
 
     @Tag("gate")
     @Test
-    public void testPEncryptModel() throws Exception {
-        String clearPwdModelFile = getSampleModelFile("-constant");
-        String tmpModelFile = System.getProperty("java.io.tmpdir") + FS + SAMPLE_MODEL_FILE_PREFIX +
-                "-constant.yaml";
+    public void testPEncryptModel(TestInfo testInfo) throws Exception {
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            Path source = Paths.get(getSampleModelFile("-constant"));
+            Path model = getTestOutputPath(testInfo).resolve(SAMPLE_MODEL_FILE_PREFIX + "-constant.yaml");
+            Files.copy(source, model, StandardCopyOption.REPLACE_EXISTING);
 
-        // update wdt model file
-        Path source = Paths.get(clearPwdModelFile);
-        Path dest = Paths.get(tmpModelFile);
-        Files.copy(source, dest, StandardCopyOption.REPLACE_EXISTING);
+            String cmd = encryptModelScript
+                + " -oracle_home " + mwhome_12213
+                + " -model_file " + model + " < " + getResourcePath() + FS + "passphrase.txt";
+            CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            verifyResult(result, "encryptModel.sh completed successfully");
 
-        String cmd = encryptModelScript + " -oracle_home " + mwhome_12213 + " -model_file " +
-                tmpModelFile + " < " + getResourcePath() + FS + "passphrase.txt";
-        logger.info("executing command: " + cmd);
-        CommandResult result = Runner.run(cmd);
-        verifyResult(result, "encryptModel.sh completed successfully");
-
-        // create the domain using -use_encryption
-        cmd = createDomainScript + " -oracle_home " + mwhome_12213 + " -domain_home " +
-                domainParent12213 + FS + "domain10 -model_file " +
-                tmpModelFile + " -archive_file " + getSampleArchiveFile() +
-                " -domain_type WLS -use_encryption < " + getResourcePath() + FS + "passphrase.txt";
-        logger.info("executing command: " + cmd);
-        result = Runner.run(cmd);
-        verifyResult(result, "createDomain.sh completed successfully");
+            // create the domain using -use_encryption
+            cmd = createDomainScript
+                + " -oracle_home " + mwhome_12213
+                + " -domain_home " + domainParent12213 + FS + "domain10"
+                + " -model_file " + model
+                + " -archive_file " + getSampleArchiveFile()
+                + " -domain_type WLS"
+                + " -use_encryption < " + getResourcePath() + FS + "passphrase.txt";
+            CommandResult result2 = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
+            verifyResult(result2, "createDomain.sh completed successfully");
+        }
     }
 
-    private boolean startAdminServer(String domainHome) throws Exception {
+    private boolean startAdminServer(String domainHome, Path outputFile) throws Exception {
         boolean isServerUp = false;
-        String cmd = "nohup " + domainHome + "/bin/startWebLogic.sh > /tmp/admin-server.out 2>&1 &";
+        String cmd = "nohup " + domainHome + "/bin/startWebLogic.sh > " + outputFile + " 2>&1 &";
 
         CommandResult result = Runner.run(cmd);
         if (result.exitValue() != 0 ) {
             logger.info("startAdminServer: result.stdout=" + result.stdout());
-            logger.info("startAdminServer: result.stdout=" + result.stdout());
-            cmd = "cat /tmp/admin-server.out";
+            cmd = "cat " + outputFile;
             result = Runner.run(cmd);
             logger.info(result.stdout());
             throw new Exception("startAdminServer: failed to execute command " + cmd);
@@ -756,7 +804,7 @@ public class ITWdt extends BaseTest {
         }
 
         if (!isServerUp) {
-            cmd = "cat /tmp/admin-server.out";
+            cmd = "cat " + outputFile;
             result = Runner.run(cmd);
             logger.info(result.stdout());
         }
@@ -765,12 +813,11 @@ public class ITWdt extends BaseTest {
     }
 
     private void stopAdminServer(String domainHome) throws Exception {
-        logger.info("Stopping the server");
+        logger.info("Stopping the WebLogic admin server");
         String cmd = domainHome + "/bin/stopWebLogic.sh";
         CommandResult result = Runner.run(cmd);
         if (result.exitValue() != 0) {
-            logger.info("DEBUG: result.stdout=" + result.stdout());
-            logger.info("DEBUG: result.stdout=" + result.stdout());
+            logger.info("Stop WLS stdout=" + result.stdout());
         }
 
     }
@@ -796,7 +843,6 @@ public class ITWdt extends BaseTest {
             "grep \"%s\" | " +
             "grep \"\\-DINSTANCE_HOME=%s\" | " +
             "cut -f1 -d' '";
-        logger.info("DEBUG: command is " + String.format(cmd_format, server, domainDir.getCanonicalPath()));
         CommandResult result = Runner.run(String.format(cmd_format, server, domainDir.getCanonicalPath()));
         logger.info("DEBUG: process id is [" + result.stdout() + "]");
         String pid = result.stdout();
@@ -813,7 +859,5 @@ public class ITWdt extends BaseTest {
         }
 
     }
-
-
 }
 
