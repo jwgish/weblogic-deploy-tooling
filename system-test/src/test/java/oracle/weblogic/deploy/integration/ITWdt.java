@@ -619,7 +619,7 @@ public class ITWdt extends BaseTest {
             CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
             verifyResult(result, "updateDomain.sh completed successfully");
 
-            // verify the domain is updated
+            // Expecting grep return code of 0.  Grep will return 0 if found, and 1 if the requested text is not found.
             cmd = "grep -q '<max-dynamic-cluster-size>4</max-dynamic-cluster-size>' " + domainParent12213 + FS +
                 "domain2" + FS + "config" + FS + "config.xml";
             CommandResult result2 = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
