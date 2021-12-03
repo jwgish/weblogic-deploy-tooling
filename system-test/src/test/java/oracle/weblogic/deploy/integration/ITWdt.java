@@ -602,6 +602,12 @@ public class ITWdt extends BaseTest {
     @Test
     public void testIUpdateDomain(TestInfo testInfo) throws Exception {
         try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            Path source = Paths.get(getSampleVariableFile());
+            Path variableFile = getTestOutputPath(testInfo).resolve(SAMPLE_VARIABLE_FILE);
+
+            replaceStringInFile(source, variableFile, "CONFIGURED_MANAGED_SERVER_COUNT=2",
+                "CONFIGURED_MANAGED_SERVER_COUNT=4");
+
             String cmd = updateDomainScript
                 + " -oracle_home " + mwhome_12213
                 + " -domain_home " + domainParent12213 + FS + "domain2"
@@ -614,10 +620,10 @@ public class ITWdt extends BaseTest {
             verifyResult(result, "updateDomain.sh completed successfully");
 
             // verify the domain is updated
-            cmd = "grep '<max-dynamic-cluster-size>4</max-dynamic-cluster-size>' " + domainParent12213 + FS +
-                "domain2" + FS + "config" + FS + "config.xml |wc -l";
+            cmd = "grep -q '<max-dynamic-cluster-size>4</max-dynamic-cluster-size>' " + domainParent12213 + FS +
+                "domain2" + FS + "config" + FS + "config.xml";
             CommandResult result2 = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
-            assertEquals(1, Integer.parseInt(result2.stdout().trim()), "the domain was not updated as expected");
+            assertEquals(0, result2.exitValue(), "the domain was not updated as expected");
         }
     }
 
