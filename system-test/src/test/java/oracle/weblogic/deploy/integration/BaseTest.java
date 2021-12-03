@@ -30,7 +30,6 @@ public class BaseTest {
     protected static final String SAMPLE_VARIABLE_FILE = "domain.properties";
     private static int maxIterations = 50;
     private static int waitTime = 5;
-    private static String projectRoot = "";
     protected static String mwhome_12213 = "";
     protected static String createDomainScript = "";
     protected static String compareModelScript = "";
@@ -47,9 +46,6 @@ public class BaseTest {
     protected static void initialize() {
 
         logger.info("Initializing the tests ...");
-        projectRoot = System.getProperty("user.dir");
-        logger.info("DEBUG: projectRoot=" + projectRoot);
-
         mwhome_12213 = System.getProperty("MW_HOME");
 
         createDomainScript = getWDTScriptsHome() + FS + "createDomain.sh";
@@ -91,12 +87,8 @@ public class BaseTest {
         Runner.run(command);
     }
 
-    protected static String getProjectRoot() {
-        return projectRoot;
-    }
-
-    protected static String getTargetDir() {
-        return getProjectRoot() + FS + "target";
+    protected static Path getTargetDir() {
+        return Paths.get("target");
     }
 
     protected static void chmodScriptFiles(String... filenames) throws Exception {
@@ -177,8 +169,8 @@ public class BaseTest {
       }
     }
 
-    protected static String getResourcePath() {
-        return getProjectRoot() + FS + "src" + FS + "test" + FS + "resources";
+    protected static Path getResourcePath() {
+        return Paths.get("src", "test", "resources");
     }
 
     protected static String getGeneratedResourcePath() {
@@ -199,8 +191,8 @@ public class BaseTest {
         return getResourcePath() + FS + SAMPLE_MODEL_FILE_PREFIX + suffix + ".yaml";
     }
 
-    protected static String getInstallerTargetDir() {
-        return getProjectRoot() + FS + ".." + FS + "installer" + FS + "target";
+    protected static Path getInstallerTargetDir() {
+        return Paths.get("..", "installer", "target");
     }
 
     protected static String getSampleVariableFile() {

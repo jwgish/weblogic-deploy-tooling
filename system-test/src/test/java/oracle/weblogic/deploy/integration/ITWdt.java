@@ -614,7 +614,7 @@ public class ITWdt extends BaseTest {
                 + " -model_file " + getSampleModelFile("1")
                 + " -archive_file " + getSampleArchiveFile()
                 + " -domain_type WLS"
-                + " -variable_file " + getSampleVariableFile();
+                + " -variable_file " + variableFile;
 
             CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
             verifyResult(result, "updateDomain.sh completed successfully");
@@ -623,7 +623,7 @@ public class ITWdt extends BaseTest {
             cmd = "grep -q '<max-dynamic-cluster-size>4</max-dynamic-cluster-size>' " + domainParent12213 + FS +
                 "domain2" + FS + "config" + FS + "config.xml";
             CommandResult result2 = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
-            assertEquals(0, result2.exitValue(), "the domain was not updated as expected");
+            assertEquals(0, result2.exitValue(), "config.xml does not appear to reflect the update");
         }
     }
 
@@ -758,7 +758,7 @@ public class ITWdt extends BaseTest {
 
             String cmd = encryptModelScript
                 + " -oracle_home " + mwhome_12213
-                + " -model_file " + model + " < " + getResourcePath() + FS + "passphrase.txt";
+                + " -model_file " + model + " < " + getResourcePath().resolve("passphrase.txt");
             CommandResult result = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
             verifyResult(result, "encryptModel.sh completed successfully");
 
@@ -769,7 +769,7 @@ public class ITWdt extends BaseTest {
                 + " -model_file " + model
                 + " -archive_file " + getSampleArchiveFile()
                 + " -domain_type WLS"
-                + " -use_encryption < " + getResourcePath() + FS + "passphrase.txt";
+                + " -use_encryption < " + getResourcePath().resolve("passphrase.txt");
             CommandResult result2 = Runner.run(cmd, getTestMethodEnvironment(testInfo), out, new PrintWriter(System.out));
             verifyResult(result2, "createDomain.sh completed successfully");
         }
