@@ -56,7 +56,8 @@ public class BaseTest {
         validateModelScript = getWDTScriptsHome() + FS + "validateModel.sh";
         compareModelScript = getWDTScriptsHome() + FS + "compareModel.sh";
 
-        domainParent12213 = "." + FS + "domains";
+        // write the domains in the target directory to try to keep the workspace clean.
+        domainParent12213 = "." + FS + "target" + FS + "domains";
     }
 
     protected static void setup() throws Exception {
@@ -70,7 +71,7 @@ public class BaseTest {
         executeAndVerify(cmd);
 
         // create domain_parent directory if not existing
-        File domainParentDir = new File(domainParent12213);
+        File domainParentDir = new File(domainParent12213).getCanonicalFile();
         if(!domainParentDir.exists()) {
             domainParentDir.mkdir();
         }

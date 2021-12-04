@@ -358,7 +358,7 @@ public class ITWdt extends BaseTest {
      * testDOnlineUpdate1 check for 103 return code if an update requires restart.
      * @throws Exception - if any error occurs
      */
-    @Tag("failing")
+    @Tag("gate")
     @Test
     public void testDOnlineUpdate1(TestInfo testInfo) throws Exception {
         assumeTrue(rcuDomainCreated, "testDOnlineUpdate skipped because testDCreateJRFDomainRunRCU failed");
@@ -406,7 +406,6 @@ public class ITWdt extends BaseTest {
     public void testDOnlineUpdate2(TestInfo testInfo) throws Exception {
         assumeTrue(rcuDomainCreated, "testDOnlineUpdate2 skipped because testDCreateJRFDomainRunRCU failed");
 
-        // Setup boot.properties
         String domainHome = domainParent12213 + FS + "jrfDomain1";
 
         Path adminServerOut = getTestOutputPath(testInfo).resolve("admin-server.out");
@@ -793,8 +792,12 @@ public class ITWdt extends BaseTest {
             String readinessCmd = "export no_proxy=localhost && curl -sw '%{http_code}' http://localhost:7001/weblogic/ready";
             result = Runner.run(readinessCmd);
             for (int i=0; i < 60; i++) {
-                logger.info("Server status: " + result.stdout());
-                if ("200".equals(result.stdout())) {
+                String stdout = result.stdout();
+                logger.info("Server status: '" + stdout + "'");
+                if (stdout != null && stdout.length() > 3) {
+                    stdout = stdout.substring(0,3);
+                }
+                if ("200".equals(stdout)) {
                     logger.info("Server is running");
                     isServerUp = true;
                     break;
