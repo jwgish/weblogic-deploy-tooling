@@ -7,8 +7,7 @@ import java.io.PrintWriter;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-
-import oracle.weblogic.deploy.logging.PlatformLogger;
+import java.util.logging.Logger;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
@@ -17,24 +16,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
  */
 public class Runner {
 
-  /**
-   * Before running the shell command, log the command to be executed to both the PrintWriter and the Logger.
-   * @param command external command to be executed
-   * @param output PrintWriter to receive stdout
-   * @param logger logger to use
-   * @return result from running the provided command
-   * @throws IOException if process start fails
-   * @throws InterruptedException if the wait is interrupted before the process completes
-   */
-  public static CommandResult run(String command, PrintWriter output, PlatformLogger logger)
-      throws IOException, InterruptedException {
-    String message = "Executing command: " + command;
-    logger.info(message);
-    output.println();
-    output.println(message);
-    output.println();
-    return run(command, output);
-  }
+  private static final Logger logger = Logger.getLogger("integration.tests.runner");
 
   /**
    * Run the provided shell command, and send stdout to System.out.
@@ -70,6 +52,7 @@ public class Runner {
    */
   public static CommandResult run(String command, Map<String,String> environment, PrintWriter... writers) throws IOException, InterruptedException {
     Arrays.stream(writers).forEach(writer -> writer.println("Executing shell command: " + command));
+    logger.info("Executing shell command: " + command);
 
     ProcessBuilder pb = new ProcessBuilder("/bin/sh", "-c", command);
     Process p = null;

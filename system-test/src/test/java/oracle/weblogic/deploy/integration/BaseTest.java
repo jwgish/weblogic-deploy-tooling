@@ -19,6 +19,9 @@ import oracle.weblogic.deploy.integration.utils.Runner;
 import oracle.weblogic.deploy.logging.PlatformLogger;
 import oracle.weblogic.deploy.logging.WLSDeployLogFactory;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 public class BaseTest {
     @TestingLogger
     private static final PlatformLogger logger = WLSDeployLogFactory.getLogger("integration.tests");
@@ -28,8 +31,8 @@ public class BaseTest {
     private static final String WDT_HOME_DIR = "weblogic-deploy";
     protected static final String SAMPLE_MODEL_FILE_PREFIX = "simple-topology";
     protected static final String SAMPLE_VARIABLE_FILE = "domain.properties";
-    private static int maxIterations = 50;
-    private static int waitTime = 5;
+    private static final int maxIterations = 50;
+    private static final int waitTime = 5;
     protected static String mwhome_12213 = "";
     protected static String createDomainScript = "";
     protected static String compareModelScript = "";
@@ -72,12 +75,8 @@ public class BaseTest {
         // create domain_parent directory if not existing
         File domainParentDir = new File(BaseTest.domainParentDir);
         if(!domainParentDir.exists()) {
-            domainParentDir.mkdir();
+            assertTrue(domainParentDir.mkdir(), "Setup failed to create Domain parent directory");
         }
-
-        chmodScriptFiles(createDomainScript, discoverDomainScript, updateDomainScript, deployAppScript,
-                encryptModelScript, validateModelScript);
-
     }
 
     protected static void cleanup() throws Exception {
@@ -108,9 +107,8 @@ public class BaseTest {
     private static void pullDockerImage(String imagename, String imagetag) throws Exception {
 
         String cmd = "docker pull " + imagename + ":" + imagetag;
-        logger.info("executing command: " + cmd);
         CommandResult result = Runner.run(cmd);
-        logger.info("DEBUG: result.stdout=" + result.stdout() );
+        assertEquals(0, result.exitValue(), "Docker pull failed for " + imagename);
 
         // verify the docker image is pulled
         result = Runner.run("docker images | grep " + imagename  + " | grep " +
@@ -150,7 +148,6 @@ public class BaseTest {
 
     protected void verifyModelFile(String modelFile) throws Exception {
         String cmd = "ls " + modelFile + " | wc -l";
-        logger.info("executing command: " + cmd);
         CommandResult result = Runner.run(cmd);
         if(Integer.parseInt(result.stdout().trim()) != 1) {
             throw new Exception("no model file is created as expected");
@@ -268,7 +265,6 @@ public class BaseTest {
     }
 
     private static CommandResult executeAndVerify(String command) throws Exception {
-        logger.info("Executing command: " + command);
         CommandResult result = Runner.run(command);
         verifyExitValue(result, command);
         return result;
