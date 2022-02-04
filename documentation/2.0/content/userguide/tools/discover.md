@@ -81,7 +81,7 @@ Please provide the `STDOUT` and `STDERR` log streams in the GitHub Issue. If the
 | Parameter | Definition | Default |
 | ---- | ---- | ---- |
 | `-archive_file` | The path to the archive file. |    |
-| `-admin_pass_env` | An alternative to entering the admin password at a prompt. The value is a environment variable name that WDT will use to retrieve the password. |    |
+| `-admin_pass_env` | An alternative to entering the admin password at a prompt. The value is an environment variable name that WDT will use to retrieve the password. |    |
 | `-admin_pass_file` | An alternative to entering the admin password at a prompt. The value is a the name of a file that contains a password string that the tool will read to retrieve the password. |    |
 | `-admin_url` | The admin server URL used for online discovery. |    |
 | `-admin_user` | The admin user used for online discovery. |    |
